@@ -155,6 +155,8 @@ SHAPES_BASE_FOLDER = "/dbfs/FileStore/shared_uploads/ram.senth@berkeley.edu/shap
 # MAGIC Since these airports do not see high volume of flights, we will drop all flights from and to these airports from our dataset.
 # MAGIC 
 # MAGIC ### Pending
+# MAGIC * Drop cancelled flights
+# MAGIC * Remove columns with lot of null values
 # MAGIC * Converting categorical features to numbers and creating a mapping.
 # MAGIC * One hot encoding of categorical features for final dataset.
 
@@ -1093,10 +1095,57 @@ pull_joined()
 
 # COMMAND ----------
 
+def register_joined_data_view():
+    df = spark.read.parquet(FINAL_JOINED_DATA_ALL)
+    df.createOrReplaceTempView("vw_joined_2015_2019")
+
+register_joined_data_view()
+
+# COMMAND ----------
+
 # MAGIC %sql
 # MAGIC SELECT year(DATEHOUR), count(*)
 # MAGIC FROM vw_weather_cleaned 
 # MAGIC GROUP BY year(DATEHOUR)
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT TAIL_NUM, _utc_dept_ts, count(*) as counts
+# MAGIC FROM vw_joined_2015_2019 
+# MAGIC WHERE TAIL_NUM is not null and cancelled <> 1 and DEP_DEL15 = 0
+# MAGIC GROUP BY TAIL_NUM, _utc_dept_ts
+# MAGIC HAVING counts > 1
+# MAGIC ORDER by counts desc
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC WITH dupe_flights as (
+# MAGIC   SELECT TAIL_NUM, _utc_dept_ts, count(*) as counts
+# MAGIC   FROM vw_joined_2015_2019 
+# MAGIC   WHERE TAIL_NUM is not null and cancelled <> 1 and DEP_DEL15 = 1
+# MAGIC   GROUP BY TAIL_NUM, _utc_dept_ts
+# MAGIC   HAVING counts > 1
+# MAGIC   ORDER by counts desc
+# MAGIC )
+# MAGIC SELECT counts as dup_counts, a._utc_dept_ts, FL_DATE, a.TAIL_NUM, OP_CARRIER_FL_NUM, OP_UNIQUE_CARRIER, OP_CARRIER_AIRLINE_ID, 
+# MAGIC   OP_CARRIER, ORIGIN, DEST, CRS_DEP_TIME, DEP_TIME, DEP_DELAY, CRS_ARR_TIME, ARR_TIME, ARR_DELAY
+# MAGIC FROM vw_joined_2015_2019 a join dupe_flights b on a.TAIL_NUM = b.TAIL_NUM and a._utc_dept_ts = b._utc_dept_ts
+# MAGIC ORDER by TAIL_NUM, _utc_dept_ts
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT DISTINCT TAIL_NUM from vw_joined_2015_2019
+# MAGIC WHERE TAIL_NUM 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC SELECT * FROM vw_joined_2015_2019
+# MAGIC WHERE TAIL_NUM in ('611GA')
 
 # COMMAND ----------
 
